@@ -1,0 +1,14 @@
+{
+  "name": "neurome-js",
+  "version": "1.0.0",
+  "description": "",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "start": "node server/server.js",
+    "build": "echo 'Build command not implemented yet'"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC"
+}
