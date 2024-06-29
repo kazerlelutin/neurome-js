@@ -18,8 +18,6 @@ const server = http.createServer((req, res) => {
       res.end(content, 'utf-8')
     })
   } else if (req.url.includes('/neurome-js')) {
-    
-    console.log('req.url', req.url)
     // Serve dynamically generated files from dist directory
     const filePath = path.join('.', req.url)
     const extname = String(path.extname(filePath)).toLowerCase()
@@ -37,7 +35,7 @@ const server = http.createServer((req, res) => {
 createWebSocketServer(server)
 
 server.listen(PORT, () => {
-  console.log(`Server is running on http://localhost:${PORT}`)
+  console.log(`🚀 Server is running on http://localhost:${PORT}`)
   generateBuild() // Generate build files on server start
 })
 

@@ -50,7 +50,7 @@ export function createWebSocketServer(server) {
 }
 
 function watchDirectory(directory, clients, ignoredPaths) {
-  fs.watch(directory, { recursive: true }, (eventType, filename) => {
+  fs.watch(directory, { recursive: true }, (_eventType, filename) => {
     if (filename && !isIgnored(filename, ignoredPaths)) {
       console.log(`File changed: ${filename}`)
       clients.forEach((client) => {
@@ -66,7 +66,7 @@ function isIgnored(filename, ignoredPaths) {
 }
 
 function getIgnoredPaths() {
-  const ignoreFilePath = path.resolve(__dirname, '../.watchignore')
+  const ignoreFilePath = path.resolve('.watchignore')
   if (fs.existsSync(ignoreFilePath)) {
     const ignoredPaths = fs
       .readFileSync(ignoreFilePath, 'utf-8')
