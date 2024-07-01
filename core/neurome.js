@@ -1,3 +1,4 @@
+import { cabin as _cabin } from '../utils/cabin.js'
 import { matchRoute } from '../utils/match-route.js'
 
 export class NeuromeJS {
@@ -6,6 +7,12 @@ export class NeuromeJS {
     this.routes = null
     this.env = null
     this.matchRoute = matchRoute
+  }
+
+  cabin(element, data) {
+    const html = _cabin(element, data)
+    element.innerHTML = html
+    this.populate(element)
   }
 
   async load() {
@@ -85,7 +92,7 @@ export class NeuromeJS {
     return element
   }
 
-  handleAttachMethods(container, middlewares, ctrl, state) {
+  async handleAttachMethods(container, middlewares, ctrl, state) {
     const middlewaresMethods = Object.keys(middlewares)
       .filter((k) => k.startsWith('on'))
       .filter((k) => !k.match(/state|oninit|cleanup/i))
@@ -144,15 +151,16 @@ export class NeuromeJS {
       container._listeners[methodType] = helper
       container.addEventListener(methodType, helper)
     })
+
+    // Call onInit method and populate the container for nested controllers
+    if (container?.onInit) await container?.onInit()
   }
 
   async populate(el = document) {
-    const elements = el.querySelectorAll('[n-c]')
+    const elements = el.querySelectorAll('[n-c], [n-m], [n-v]')
+
     for (const element of elements) {
       element._listeners = {}
-      const controllerName = element.getAttribute('n-c')
-      const controllerModulePath = `/ctrl/${controllerName}.js`
-
       const state = []
       const ctrl = {}
       const middlewares = {}
@@ -167,18 +175,24 @@ export class NeuromeJS {
         }
       }
 
-      try {
-        const { default: controller } = await import(controllerModulePath)
-        if (controller.state) {
-          state.push(
-            ...Object.keys(controller.state).map((k) => ({
-              [k]: controller.state[k],
-            }))
-          )
+      // === Controller and Middleware management ===
+      if (element.getAttribute('n-c')) {
+        const controllerName = element.getAttribute('n-c')
+        const controllerModulePath = `/ctrl/${controllerName}.js`
+        try {
+          const { default: controller } = await import(controllerModulePath)
+          if (controller.state) {
+            state.push(
+              ...Object.keys(controller.state).map((k) => ({
+                [k]: controller.state[k],
+              }))
+            )
+          }
+          Object.assign(ctrl, controller)
+          element.removeAttribute('n-c')
+        } catch (e) {
+          console.error(`Controller ${controllerName} not found`)
         }
-        Object.assign(ctrl, controller)
-      } catch (e) {
-        console.error(`Controller ${controllerName} not found`)
       }
 
       if (element.getAttribute('n-m')) {
@@ -195,10 +209,13 @@ export class NeuromeJS {
           }
 
           Object.assign(middlewares, middleware)
+          element.removeAttribute('n-m')
         } catch (e) {
           console.error(`Middleware ${controllerName} not found`)
         }
       }
+
+      await this.injectView(element)
 
       this.handleAttachMethods(
         element,
@@ -208,6 +225,24 @@ export class NeuromeJS {
           return { ...acc, ...curr }
         }, {})
       )
+    }
+  }
+
+  async injectView(element) {
+    if (element.getAttribute('n-v')) {
+      const viewName = element.getAttribute('n-v')
+      const viewModulePath = `/dist/views/${viewName}.js`
+      try {
+        const { default: view } = await import(viewModulePath)
+
+        const container = document.createElement('div')
+        container.innerHTML = view
+        element.replaceWith(container?.firstElementChild || container)
+        element.removeAttribute('n-v')
+      } catch (e) {
+        console.error(`View ${viewName} not found`)
+      }
+      this.populate()
     }
   }
 }

@@ -8,6 +8,8 @@ const env = loadEnv()
 const pagesDir = path.resolve('./pages')
 const distDir = path.resolve('./dist')
 const routesFile = path.join(distDir, 'routes.js')
+const viewDir = path.resolve('./views')
+const viewDistDir = path.join(distDir, 'views')
 const routesDir = path.join(distDir, 'routes')
 const versionFile = path.join(distDir, 'version.js')
 const envFile = path.join(distDir, 'env.js')
@@ -15,6 +17,7 @@ const pkg = JSON.parse(fs.readFileSync('./package.json', 'utf-8'))
 
 export async function generateBuild() {
   createDistDir()
+  generateViews()
   generateRoutes()
   generateVersion()
   generateEnv()
@@ -26,10 +29,28 @@ function createDistDir() {
   }
 }
 
+function generateViews() {
+  if (!fs.existsSync(viewDistDir)) fs.mkdirSync(viewDistDir)
+
+  const views = getPages(viewDir)
+  views.map((view) => {
+    const name = view.replace(viewDir, '').replace(/\.html$/, '')
+    const content = fs.readFileSync(path.join(viewDir, view), 'utf-8')
+    const contentFileName = name + '.js'
+    const contentPath = path.join(viewDistDir, contentFileName)
+
+    fs.writeFileSync(
+      contentPath,
+      'const view = ' + '`' + content + '`\nexport default view',
+      'utf-8'
+    )
+  })
+
+  console.log('views file generated')
+}
+
 function generateRoutes() {
-  if (!fs.existsSync(routesDir)) {
-    fs.mkdirSync(routesDir)
-  }
+  if (!fs.existsSync(routesDir)) fs.mkdirSync(routesDir)
 
   const pages = getPages(pagesDir)
   const routes = pages.map((page) => {
