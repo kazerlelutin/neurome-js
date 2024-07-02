@@ -9,7 +9,11 @@ export function handleRequest(req, res) {
   const urlPath = req.url
 
   // Check if the request is for a static file
-  if (urlPath.startsWith('/public') || urlPath.endsWith('.js')) {
+  if (
+    urlPath.startsWith('/public') ||
+    urlPath.endsWith('.js') ||
+    urlPath.endsWith('.css')
+  ) {
     return serveStaticFile(req, res)
   }
 

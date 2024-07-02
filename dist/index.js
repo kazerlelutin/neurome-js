@@ -2,6 +2,7 @@ import fs from 'fs'
 import path from 'path'
 import { loadEnv } from '../utils/loadEnv.js' // Assurez-vous que ce fichier est au bon endroit
 import { hashString } from '../utils/hash-string.js'
+import styles from './styles.js'
 
 const env = loadEnv()
 
@@ -21,6 +22,7 @@ export async function generateBuild() {
   generateRoutes()
   generateVersion()
   generateEnv()
+  copyCss()
 }
 
 function createDistDir() {
@@ -93,6 +95,12 @@ function generateVersion() {
   const versionContent = `export const version = '${pkg.version}';`
   fs.writeFileSync(versionFile, versionContent, 'utf-8')
   console.log('Version file generated at', versionFile)
+}
+
+function copyCss() {
+  console.log('styles', styles)
+  fs.writeFileSync(path.join(distDir, 'styles.css'), styles, 'utf-8')
+  console.log('CSS file generated at', path.join(distDir, 'styles.css'))
 }
 
 function generateEnv() {

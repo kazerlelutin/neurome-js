@@ -4,18 +4,18 @@ export function cabin(element, data) {
   const ifRegex = /{{#if (\w+)}}([\s\S]*?){{\/if}}/g
   const varRegex = /{{(\w+)}}/g
 
-  template = template.replace(eachRegex, (match, key, content) => {
+  template = template.replace(eachRegex, (_match, key, content) => {
     const items = data[key] || []
     return items
       .map((item) => content.replace(varRegex, (_, k) => item[k]))
       .join('')
   })
 
-  template = template.replace(ifRegex, (match, key, content) => {
+  template = template.replace(ifRegex, (_match, key, content) => {
     return data[key] ? content : ''
   })
 
-  template = template.replace(varRegex, (match, key) => {
+  template = template.replace(varRegex, (_match, key) => {
     return data[key] !== undefined ? data[key] : ''
   })
 

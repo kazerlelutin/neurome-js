@@ -2,17 +2,41 @@ import { cabin as _cabin } from '../utils/cabin.js'
 import { matchRoute } from '../utils/match-route.js'
 
 export class NeuromeJS {
-  constructor() {
+  constructor({ style = true } = {}) {
     this.version = null
     this.routes = null
     this.env = null
     this.matchRoute = matchRoute
+    this.style = style
+    this.cleanupCollection = []
   }
 
   cabin(element, data) {
-    const html = _cabin(element, data)
-    element.innerHTML = html
-    this.populate(element)
+    const cloneView = element.view.cloneNode(true)
+
+    const oldElements = []
+    element.querySelectorAll('[n-id]').forEach((el) => {
+      if (el.state) {
+        oldElements.push({
+          id: el.getAttribute('n-id'),
+          state: el.state,
+        })
+      }
+    })
+
+    // Utiliser un fragment de document pour préparer le nouveau contenu
+    const fragment = document.createDocumentFragment()
+    const tempDiv = document.createElement('div')
+    tempDiv.innerHTML = _cabin(cloneView, data)
+    while (tempDiv.firstChild) {
+      fragment.appendChild(tempDiv.firstChild)
+    }
+
+    // Remplacer le contenu de l'élément en une seule opération
+    element.innerHTML = ''
+
+    this.populate(fragment, oldElements)
+    element.appendChild(fragment)
   }
 
   async load() {
@@ -28,7 +52,13 @@ export class NeuromeJS {
     this.env = env
     console.log('🔋 NeuromeJS is loaded:', this.version)
 
-    // Charger et injecter la page initiale
+    if (this.style) {
+      const rel = document.createElement('link')
+      rel.rel = 'stylesheet'
+      rel.href = '/dist/styles.css'
+      document.head.prepend(rel)
+    }
+
     await this.loadAndInjectPage()
   }
 
@@ -92,48 +122,41 @@ export class NeuromeJS {
     return element
   }
 
-  async handleAttachMethods(container, middlewares, ctrl, state) {
+  async handleAttachMethods(container, middlewares, ctrl) {
     const middlewaresMethods = Object.keys(middlewares)
       .filter((k) => k.startsWith('on'))
-      .filter((k) => !k.match(/state|oninit|cleanup/i))
+      .filter((k) => !k.match(/state|oninit|onpulse|cleanup/i))
     const ctrlMethods = Object.keys(ctrl)
       .filter((k) => k.startsWith('on'))
-      .filter((k) => !k.match(/state|oninit|cleanup/i))
-
-    if (middlewares.render || ctrl.render) {
-      container.render = async (proxy_) => {
-        const proxy = proxy_ || {
-          name: undefined,
-          key: undefined,
-          value: undefined,
-        }
-        const middlewareResult = middlewares.render
-          ? await middlewares.render(state, container, proxy)
-          : undefined
-        if (ctrl.render) {
-          ctrl.render(state, container, proxy, middlewareResult)
-        }
-      }
-    }
+      .filter((k) => !k.match(/state|oninit|onpulse|cleanup/i))
 
     if (middlewares.onInit || ctrl.onInit) {
       container.onInit = async () => {
         const middlewareResult = middlewares.onInit
-          ? await middlewares.onInit(state, container)
+          ? await middlewares.onInit(container)
           : undefined
 
-        if (ctrl.onInit) ctrl.onInit(state, container, middlewareResult)
+        if (ctrl.onInit) ctrl.onInit(container, middlewareResult)
       }
     }
 
     if (middlewares.cleanUp || ctrl.cleanUp) {
       container.cleanUp = () => {
         const middlewareResult = middlewares.cleanUp
-          ? middlewares.cleanUp(state, container)
+          ? middlewares.cleanUp(container)
           : undefined
-        if (ctrl.cleanUp) ctrl.cleanUp(state, container, middlewareResult)
+        if (ctrl.cleanUp) ctrl.cleanUp(container, middlewareResult)
 
         this.cleanupCollection.push(container.cleanUp)
+      }
+    }
+
+    if (middlewares.onPulse || ctrl.onPulse) {
+      container.onPulse = async (el, message) => {
+        const middlewareResult = middlewares.onPulse
+          ? await middlewares.onPulse(el, message)
+          : undefined
+        if (ctrl.onPulse) ctrl.onPulse(el, message, middlewareResult)
       }
     }
 
@@ -143,21 +166,45 @@ export class NeuromeJS {
 
       const helper = async (e) => {
         const middlewareResult = middlewares[method]
-          ? await middlewares[method](state, e.target, e)
+          ? await middlewares[method](e.target, e)
           : undefined
-        if (ctrl[method]) ctrl[method](state, e.target, e, middlewareResult)
+        if (ctrl[method]) ctrl[method](e.target, e, middlewareResult)
       }
 
+      container._listeners = container._listeners || {}
       container._listeners[methodType] = helper
       container.addEventListener(methodType, helper)
     })
 
-    // Call onInit method and populate the container for nested controllers
     if (container?.onInit) await container?.onInit()
   }
 
-  async populate(el = document) {
+  hashString(str) {
+    let hash = 0
+    for (let i = 0; i < str.length; i++) {
+      const char = str.charCodeAt(i)
+      hash = (hash << 5) - hash + char
+      hash |= 0 // Convert to 32bit integer
+    }
+
+    return hash.toString().slice(1)
+  }
+
+  async populate(el = document, oldElements = []) {
     const elements = el.querySelectorAll('[n-c], [n-m], [n-v]')
+
+    elements.forEach((el, index) => {
+      if (!el.getAttribute('n-id')) {
+        const attributes = [...el.attributes]
+          .map((attr) => `${attr.name}=${attr.value}`)
+          .join('|')
+        el.setAttribute('n-id', this.hashString(attributes + '-' + index))
+      }
+    })
+
+    elements.forEach((el) => {
+      el.view = el.cloneNode(true)
+    })
 
     for (const element of elements) {
       element._listeners = {}
@@ -165,7 +212,6 @@ export class NeuromeJS {
       const ctrl = {}
       const middlewares = {}
 
-      // === State management ===
       for (const attr of element.getAttributeNames()) {
         const attrValue = element.getAttribute(attr)
 
@@ -175,7 +221,6 @@ export class NeuromeJS {
         }
       }
 
-      // === Controller and Middleware management ===
       if (element.getAttribute('n-c')) {
         const controllerName = element.getAttribute('n-c')
         const controllerModulePath = `/ctrl/${controllerName}.js`
@@ -215,34 +260,54 @@ export class NeuromeJS {
         }
       }
 
-      await this.injectView(element)
-
-      this.handleAttachMethods(
-        element,
-        middlewares,
-        ctrl,
-        state.reduce((acc, curr) => {
-          return { ...acc, ...curr }
-        }, {})
+      const existState = oldElements.find(
+        (el) => el.id === element.getAttribute('n-id')
       )
+      if (existState) {
+        element.state = {
+          ...state.reduce((acc, curr) => ({ ...acc, ...curr }), {}),
+          ...existState.state,
+        }
+      } else {
+        element.state = {
+          ...state.reduce((acc, curr) => ({ ...acc, ...curr }), {}),
+        }
+      }
+      await this.injectView(element, oldElements)
+      if (!element.__init) this.handleAttachMethods(element, middlewares, ctrl)
+      element.__init = true
     }
   }
 
-  async injectView(element) {
+  async injectView(element, oldElements = []) {
     if (element.getAttribute('n-v')) {
       const viewName = element.getAttribute('n-v')
       const viewModulePath = `/dist/views/${viewName}.js`
       try {
         const { default: view } = await import(viewModulePath)
 
+        const id = element.getAttribute('n-id')
         const container = document.createElement('div')
         container.innerHTML = view
+
+        if (container.firstElementChild) {
+          container.firstElementChild.setAttribute('n-id', id)
+        } else {
+          container.setAttribute('n-id', id)
+        }
         element.replaceWith(container?.firstElementChild || container)
         element.removeAttribute('n-v')
       } catch (e) {
         console.error(`View ${viewName} not found`)
       }
-      this.populate()
+      this.populate(undefined, oldElements)
     }
+  }
+
+  pulse(room, message) {
+    const elements = document.querySelectorAll(`[n-l-${room}]`)
+    elements.forEach((element) => {
+      if (element.onPulse) element.onPulse(element, { room, message })
+    })
   }
 }
