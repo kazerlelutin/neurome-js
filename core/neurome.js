@@ -2,41 +2,44 @@ import { cabin as _cabin } from '../utils/cabin.js'
 import { matchRoute } from '../utils/match-route.js'
 
 export class NeuromeJS {
-  constructor({ style = true } = {}) {
+  /**
+   * @param {Object} options
+   * @param {boolean} options.style
+   * @param {string} options.locale
+   */
+  constructor({ style = true, locale = 'en' } = {}) {
     this.version = null
     this.routes = null
     this.env = null
     this.matchRoute = matchRoute
     this.style = style
+    this.locale = locale
+    this.translations = {}
     this.cleanupCollection = []
+    this.loadTranslations()
   }
 
-  cabin(element, data) {
-    const cloneView = element.view.cloneNode(true)
-
-    const oldElements = []
-    element.querySelectorAll('[n-id]').forEach((el) => {
-      if (el.state) {
-        oldElements.push({
-          id: el.getAttribute('n-id'),
-          state: el.state,
-        })
-      }
-    })
-
-    // Utiliser un fragment de document pour préparer le nouveau contenu
-    const fragment = document.createDocumentFragment()
-    const tempDiv = document.createElement('div')
-    tempDiv.innerHTML = _cabin(cloneView, data)
-    while (tempDiv.firstChild) {
-      fragment.appendChild(tempDiv.firstChild)
+  setLocale(locale) {
+    if (this.locale !== locale) {
+      this.locale = locale
+      this.loadTranslations().then(() => {
+        this.refreshContent()
+      })
     }
+  }
 
-    // Remplacer le contenu de l'élément en une seule opération
-    element.innerHTML = ''
+  async loadTranslations() {
+    try {
+      const l = await import(`/dist/locales/${this.locale}.js`)
+      this.translations = l.default
+      console.log(`Translations loaded for locale: ${this.locale}`)
+    } catch (e) {
+      console.error(`Error loading translations for locale: ${this.locale}`, e)
+    }
+  }
 
-    this.populate(fragment, oldElements)
-    element.appendChild(fragment)
+  t(key) {
+    return this.translations[key] || key
   }
 
   async load() {
@@ -62,26 +65,46 @@ export class NeuromeJS {
     await this.loadAndInjectPage()
   }
 
-  static async getVersion() {
-    if (!this.version) {
-      const basePath = this.getBasePath()
-      const { version } = await import(basePath + 'dist/version.js')
-      this.version = version
-    }
-    return this.version
+  cabin(element, data) {
+    const cloneView = element.view.cloneNode(true)
+
+    const oldElements = []
+    element.querySelectorAll('[n-id]').forEach((el) => {
+      if (el.state) {
+        oldElements.push({
+          id: el.getAttribute('n-id'),
+          state: el.state,
+        })
+      }
+    })
+
+    this.populateAttributes(cloneView, data)
+
+    const html = _cabin(
+      cloneView,
+      Object.keys(data).reduce((acc, key) => {
+        return {
+          ...acc,
+          [key]: this.t(data[key]),
+        }
+      }, {}) || {}
+    )
+
+    element.innerHTML = html
+
+    this.populate(element, oldElements)
   }
 
-  getCurrentRouteParams() {
-    const url = window.location.pathname
-    const result = this.matchRoute(url, this.routes)
-    return result ? result.params : null
-  }
-
-  getEnv(key) {
-    if (!this.env[key]) {
-      throw new Error(`Environment variable ${key} is not defined`)
-    }
-    return this.env[key]
+  populateAttributes(element, data) {
+    element.querySelectorAll('[n-s-]').forEach((el) => {
+      const attrNames = el.getAttributeNames()
+      attrNames.forEach((attr) => {
+        if (attr.startsWith('n-s-')) {
+          const key = attr.slice(4)
+          el.setAttribute(attr, data[key] || '')
+        }
+      })
+    })
   }
 
   async loadAndInjectPage() {
@@ -263,6 +286,7 @@ export class NeuromeJS {
       const existState = oldElements.find(
         (el) => el.id === element.getAttribute('n-id')
       )
+
       if (existState) {
         element.state = {
           ...state.reduce((acc, curr) => ({ ...acc, ...curr }), {}),
@@ -273,6 +297,7 @@ export class NeuromeJS {
           ...state.reduce((acc, curr) => ({ ...acc, ...curr }), {}),
         }
       }
+
       await this.injectView(element, oldElements)
       if (!element.__init) this.handleAttachMethods(element, middlewares, ctrl)
       element.__init = true
@@ -309,5 +334,12 @@ export class NeuromeJS {
     elements.forEach((element) => {
       if (element.onPulse) element.onPulse(element, { room, message })
     })
+  }
+
+  refreshContent() {
+    const app = document.getElementById('app')
+    const html = app.innerHTML
+    app.innerHTML = this.t(html)
+    this.populate(app)
   }
 }

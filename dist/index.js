@@ -8,8 +8,10 @@ const env = loadEnv()
 
 const pagesDir = path.resolve('./pages')
 const distDir = path.resolve('./dist')
-const routesFile = path.join(distDir, 'routes.js')
 const viewDir = path.resolve('./views')
+const localesDir = path.resolve('./locales')
+const routesFile = path.join(distDir, 'routes.js')
+const localesDistDir = path.join(distDir, 'locales')
 const viewDistDir = path.join(distDir, 'views')
 const routesDir = path.join(distDir, 'routes')
 const versionFile = path.join(distDir, 'version.js')
@@ -20,6 +22,7 @@ export async function generateBuild() {
   createDistDir()
   generateViews()
   generateRoutes()
+  generateLocales()
   generateVersion()
   generateEnv()
   copyCss()
@@ -43,7 +46,27 @@ function generateViews() {
 
     fs.writeFileSync(
       contentPath,
-      'const view = ' + '`' + content + '`\nexport default view',
+      'const v = ' + '`' + content + '`\nexport default v',
+      'utf-8'
+    )
+  })
+
+  console.log('views file generated')
+}
+
+function generateLocales() {
+  if (!fs.existsSync(localesDistDir)) fs.mkdirSync(localesDistDir)
+
+  const locales = getJson(localesDir)
+  locales.map((locale) => {
+    const name = locale.replace(localesDir, '').replace(/\.json$/, '')
+    const content = fs.readFileSync(path.join(localesDir, locale), 'utf-8')
+    const contentFileName = name + '.js'
+    const contentPath = path.join(localesDistDir, contentFileName)
+
+    fs.writeFileSync(
+      contentPath,
+      'const l = ' + content + '\nexport default l',
       'utf-8'
     )
   })
@@ -72,7 +95,7 @@ function generateRoutes() {
 
     fs.writeFileSync(
       contentPath,
-      'const page = ' + '`' + content + '`\nexport default page',
+      'const p = ' + '`' + content + '`\nexport default p',
       'utf-8'
     )
 
@@ -98,7 +121,6 @@ function generateVersion() {
 }
 
 function copyCss() {
-  console.log('styles', styles)
   fs.writeFileSync(path.join(distDir, 'styles.css'), styles, 'utf-8')
   console.log('CSS file generated at', path.join(distDir, 'styles.css'))
 }
@@ -129,6 +151,23 @@ function getPages(dir, basePath = '') {
         ...getPages(path.join(dir, entry.name), path.join(basePath, entry.name))
       )
     } else if (entry.isFile() && entry.name.endsWith('.html')) {
+      pages.push(path.join(basePath, entry.name))
+    }
+  })
+
+  return pages
+}
+
+function getJson(dir, basePath = '') {
+  const entries = fs.readdirSync(dir, { withFileTypes: true })
+  const pages = []
+
+  entries.forEach((entry) => {
+    if (entry.isDirectory()) {
+      pages.push(
+        ...getPages(path.join(dir, entry.name), path.join(basePath, entry.name))
+      )
+    } else if (entry.isFile() && entry.name.endsWith('.json')) {
       pages.push(path.join(basePath, entry.name))
     }
   })
