@@ -1,22 +1,60 @@
 import { cabin as _cabin } from '../utils/cabin.js'
 import { matchRoute } from '../utils/match-route.js'
+import { IdbORM } from '../idb/idb.js'
+import { Model } from '../idb/model.js'
 
 export class NeuromeJS {
   /**
    * @param {Object} options
    * @param {boolean} options.style
    * @param {string} options.locale
+   * @param {string} options.cookieConsentKey
+   * @param {string} options.dbName
+   * @param {Array} options.stores
+   * @param {number} options.dbVersion
+   * @param {Object} options.routes
    */
-  constructor({ style = true, locale = 'en' } = {}) {
+  constructor({
+    style = true,
+    locale = 'en',
+    cookieConsentKey = 'cookieConsent',
+    dbName = 'neurome',
+    stores,
+    dbVersion = 1,
+  } = {}) {
     this.version = null
+
+    //Routing
     this.routes = null
     this.env = null
     this.matchRoute = matchRoute
-    this.style = style
+
+    //I18n
     this.locale = locale
     this.translations = {}
-    this.cleanupCollection = []
     this.loadTranslations()
+
+    //Styling
+    this.style = style
+
+    this.cleanupCollection = []
+
+    //Cookie
+    this.cookieConsentKey = cookieConsentKey
+    //IDB
+    this.stores = stores
+    this.dbName = dbName
+    this.db = new IdbORM(dbName, dbVersion)
+    this.models = {}
+  }
+
+  checkCookieConsent() {
+    return document.cookie.includes(`${this.cookieConsentKey}=true`)
+  }
+
+  async setCookieConsent(consent) {
+    document.cookie = `${this.cookieConsentKey}=${consent};path=/;max-age=31536000`
+    await this.initDatabase()
   }
 
   setLocale(locale) {
@@ -26,6 +64,17 @@ export class NeuromeJS {
         this.refreshContent()
       })
     }
+  }
+
+  async initDatabase(stores) {
+    await this.db.init(stores)
+    this.createModels(stores)
+  }
+
+  createModels(stores) {
+    stores.forEach((store) => {
+      this.models[store.name] = new Model(this.db, store.name)
+    })
   }
 
   async loadTranslations() {
@@ -61,6 +110,9 @@ export class NeuromeJS {
       rel.href = '/dist/styles.css'
       document.head.prepend(rel)
     }
+
+    if (this.stores && this.checkCookieConsent())
+      await this.initDatabase(this.stores)
 
     await this.loadAndInjectPage()
   }
