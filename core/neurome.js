@@ -2,6 +2,7 @@ import { cabin as _cabin } from '../utils/cabin.js'
 import { matchRoute } from '../utils/match-route.js'
 import { IdbORM } from '../idb/idb.js'
 import { Model } from '../idb/model.js'
+import { WebRTCClient } from '../utils/web-rtc.js'
 
 export class NeuromeJS {
   /**
@@ -46,6 +47,10 @@ export class NeuromeJS {
     this.dbName = dbName
     this.db = new IdbORM(dbName, dbVersion)
     this.models = {}
+
+    //WebRTC
+    this.webrtcClient = new WebRTCClient()
+    this.offerCache = {}
   }
 
   checkCookieConsent() {
@@ -117,6 +122,7 @@ export class NeuromeJS {
     await this.loadAndInjectPage()
   }
 
+  // ===== VIEW ========================================================================================================
   cabin(element, data) {
     const cloneView = element.view.cloneNode(true)
 
@@ -159,6 +165,8 @@ export class NeuromeJS {
     })
   }
 
+  // ===== ROUTER ========================================================================================================
+
   async loadAndInjectPage() {
     const url = window.location.pathname
     const result = this.matchRoute(url, this.routes)
@@ -177,6 +185,8 @@ export class NeuromeJS {
     const { default: pageContent } = await import(pageModulePath)
     return pageContent
   }
+
+  // ===== TREATMENT ========================================================================================================
 
   sanitizeElement(element) {
     const scripts = element.querySelectorAll('script')
@@ -393,5 +403,77 @@ export class NeuromeJS {
     const html = app.innerHTML
     app.innerHTML = this.t(html)
     this.populate(app)
+  }
+
+  // ===== SYNC ========================================================================================================
+
+  async generateOffer() {
+    this.peerConnection = new RTCPeerConnection()
+    this.dataChannel = this.peerConnection.createDataChannel('dataChannel')
+
+    this.dataChannel.onopen = () => console.log('Data channel opened')
+    this.dataChannel.onmessage = (event) => this.handleDataChannelMessage(event)
+
+    const offer = await this.peerConnection.createOffer()
+    await this.peerConnection.setLocalDescription(offer)
+
+    const shortCode = this.generateShortCode()
+    this.offerCache[shortCode] = offer
+
+    console.log('Offer generated:', this.offerCache)
+    setTimeout(() => {
+      delete this.offerCache[shortCode]
+    }, 300000) // 5 minutes expiration
+    return shortCode
+  }
+
+  async handleShortCodeInput(shortCode) {
+    const offer = this.offerCache[shortCode]
+    if (!offer) {
+      console.error('Invalid short code')
+      return
+    }
+    this.peerConnection = new RTCPeerConnection()
+    this.peerConnection.ondatachannel = (event) => {
+      this.dataChannel = event.channel
+      this.dataChannel.onmessage = (event) =>
+        this.handleDataChannelMessage(event)
+    }
+    await this.peerConnection.setRemoteDescription(offer)
+    const answer = await this.peerConnection.createAnswer()
+    await this.peerConnection.setLocalDescription(answer)
+    this.peerConnection.onicecandidate = (event) => {
+      if (event.candidate) {
+        this.sendMessage({
+          type: 'answer',
+          data: answer,
+        })
+      }
+    }
+  }
+
+  sendMessage(message) {
+    if (this.dataChannel && this.dataChannel.readyState === 'open') {
+      this.dataChannel.send(JSON.stringify(message))
+    }
+  }
+
+  handleDataChannelMessage(event) {
+    const message = JSON.parse(event.data)
+    if (message.type === 'shortCode') {
+      console.log('Short code received:', message.data)
+    } else {
+      console.log('Message received:', message.data)
+      this.pulse('sync', message)
+    }
+  }
+
+  generateShortCode() {
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+    let result = ''
+    for (let i = 0; i < 6; i++) {
+      result += chars.charAt(Math.floor(Math.random() * chars.length))
+    }
+    return result
   }
 }

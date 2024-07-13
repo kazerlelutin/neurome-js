@@ -2,8 +2,6 @@ import fs from 'fs'
 import crypto from 'crypto'
 import path from 'path'
 
-const __dirname = process.cwd()
-
 export function createWebSocketServer(server) {
   const clients = new Set()
   const ignoredPaths = getIgnoredPaths()
